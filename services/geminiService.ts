@@ -41,8 +41,9 @@ export const sendMessageToGemini = async (
     return { text: "عذراً، فشل تهيئة خدمة الذكاء الاصطناعي." };
   }
 
-  // Defined here so it is accessible in the catch block
-  const model = 'gemini-3-pro-preview';
+  // Changed from 'gemini-3-pro-preview' to 'gemini-3-flash-preview' 
+  // to avoid "Quota Exceeded" errors and improve speed.
+  const model = 'gemini-3-flash-preview';
 
   try {
     // 1. Handle Image Generation Request
@@ -76,7 +77,6 @@ export const sendMessageToGemini = async (
     }
 
     // 2. Handle Text Chat
-    // Using gemini-3-pro-preview as requested.
     
     const parts: any[] = [];
     
