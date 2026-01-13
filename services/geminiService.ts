@@ -2,7 +2,14 @@ import { GoogleGenAI } from "@google/genai";
 
 // Initialize the client
 // NOTE: The API key is injected via process.env.API_KEY as per instructions.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// We handle the potential absence of the key gracefully to prevent white-screen crashes.
+let ai: GoogleGenAI;
+
+try {
+  ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+} catch (error) {
+  console.error("Failed to initialize GoogleGenAI. Check your API_KEY.", error);
+}
 
 /**
  * Heuristic to check if the user wants to generate an image.
@@ -21,6 +28,10 @@ export const sendMessageToGemini = async (
   prompt: string,
   imageBase64?: string
 ): Promise<{ text: string; generatedImage?: string }> => {
+  if (!ai) {
+    return { text: "عذراً، لم يتم تهيئة مفتاح API بشكل صحيح. يرجى التحقق من الإعدادات." };
+  }
+
   try {
     // 1. Handle Image Generation Request
     // If no attachment is present, and the text looks like an image prompt, try to generate an image.
