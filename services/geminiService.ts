@@ -2,13 +2,17 @@ import { GoogleGenAI } from "@google/genai";
 
 // Initialize the client
 // NOTE: The API key is injected via process.env.API_KEY as per instructions.
-// We handle the potential absence of the key gracefully to prevent white-screen crashes.
+// We handle the potential absence of the key gracefully.
 let ai: GoogleGenAI;
 
 try {
-  ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  // process.env.API_KEY is replaced by Vite at build time
+  const apiKey = process.env.API_KEY || '';
+  if (apiKey) {
+    ai = new GoogleGenAI({ apiKey: apiKey });
+  }
 } catch (error) {
-  console.error("Failed to initialize GoogleGenAI. Check your API_KEY.", error);
+  console.error("Failed to initialize GoogleGenAI.", error);
 }
 
 /**
@@ -28,13 +32,20 @@ export const sendMessageToGemini = async (
   prompt: string,
   imageBase64?: string
 ): Promise<{ text: string; generatedImage?: string }> => {
-  if (!ai) {
-    return { text: "عذراً، لم يتم تهيئة مفتاح API بشكل صحيح. يرجى التحقق من الإعدادات." };
+  // Check if API key was present during build/initialization
+  if (!process.env.API_KEY) {
+    return { text: "عذراً، مفتاح API غير موجود. يرجى التأكد من إضافة API_KEY في إعدادات النشر (Environment Variables) ثم إعادة البناء (Re-deploy)." };
   }
+
+  if (!ai) {
+    return { text: "عذراً، فشل تهيئة خدمة الذكاء الاصطناعي." };
+  }
+
+  // Defined here so it is accessible in the catch block
+  const model = 'gemini-3-pro-preview';
 
   try {
     // 1. Handle Image Generation Request
-    // If no attachment is present, and the text looks like an image prompt, try to generate an image.
     if (!imageBase64 && isImageGenerationRequest(prompt)) {
       try {
         const response = await ai.models.generateContent({
@@ -44,7 +55,6 @@ export const sendMessageToGemini = async (
           },
         });
 
-        // Extract image from response parts
         const parts = response.candidates?.[0]?.content?.parts;
         if (parts) {
           for (const part of parts) {
@@ -56,29 +66,26 @@ export const sendMessageToGemini = async (
             }
           }
         }
-        // If text was returned instead of image (fallback)
         if (response.text) {
           return { text: response.text };
         }
-      } catch (genError) {
-        console.error("Image generation failed, falling back to chat:", genError);
+      } catch (genError: any) {
+        console.error("Image generation failed:", genError);
         // Fallback to text chat if image generation fails
       }
     }
 
-    // 2. Handle Text Chat (with optional Vision input)
-    // Use gemini-3-pro-preview for high quality reasoning and vision capabilities
-    const model = 'gemini-3-pro-preview';
+    // 2. Handle Text Chat
+    // Using gemini-3-pro-preview as requested.
     
     const parts: any[] = [];
     
     if (imageBase64) {
-      // Clean the base64 string if it contains the data URL prefix
       const cleanBase64 = imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
       parts.push({
         inlineData: {
           data: cleanBase64,
-          mimeType: 'image/jpeg', // Assuming JPEG for simplicity, or detect from string
+          mimeType: 'image/jpeg',
         },
       });
     }
@@ -94,8 +101,24 @@ export const sendMessageToGemini = async (
 
     return { text: response.text || "عذراً، لم أستطع معالجة الطلب." };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return { text: "حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة مرة أخرى." };
+    
+    // Attempt to extract meaningful error message
+    let errorMessage = "حدث خطأ أثناء الاتصال بالخادم.";
+    
+    if (error.message) {
+        if (error.message.includes("API key")) {
+            errorMessage = "مفتاح API غير صالح أو غير مفعل. يرجى التحقق منه.";
+        } else if (error.message.includes("429")) {
+            errorMessage = "تم تجاوز حد الطلبات (Quota Exceeded). يرجى المحاولة لاحقاً.";
+        } else if (error.message.includes("404")) {
+             errorMessage = `الموديل غير متاح حالياً (${model}) أو المفتاح لا يملك صلاحية الوصول إليه.`;
+        } else {
+            errorMessage = `حدث خطأ تقني: ${error.message}`;
+        }
+    }
+    
+    return { text: errorMessage };
   }
 };
