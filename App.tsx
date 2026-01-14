@@ -20,7 +20,7 @@ const App: React.FC = () => {
   }, [messages]);
 
   const handleSend = async (text: string, image?: string) => {
-    // Add user message
+    // Add user message locally
     const userMessage: ChatMessage = {
       id: uuidv4(),
       role: MessageRole.USER,
@@ -32,8 +32,14 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // Call Gemini API
-      const response = await sendMessageToGemini(text, image);
+      // Get the last 5 messages for context
+      // Note: `messages` here refers to the state BEFORE the update above is processed 
+      // in this closure, which is exactly what we want (previous history).
+      // If we wanted to include older messages, we slice the end.
+      const history = messages.slice(-5);
+
+      // Call Gemini API with history
+      const response = await sendMessageToGemini(text, image, history);
 
       // Add Model Message
       const modelMessage: ChatMessage = {

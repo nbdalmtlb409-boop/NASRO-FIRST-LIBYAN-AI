@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { ChatMessage, MessageRole } from "../types";
 
 // Initialize the client
 // NOTE: The API key is injected via process.env.API_KEY as per instructions.
@@ -30,7 +31,8 @@ const isImageGenerationRequest = (text: string): boolean => {
 
 export const sendMessageToGemini = async (
   prompt: string,
-  imageBase64?: string
+  imageBase64: string | undefined,
+  history: ChatMessage[] = []
 ): Promise<{ text: string; generatedImage?: string }> => {
   // Check if API key was present during build/initialization
   if (!process.env.API_KEY) {
@@ -47,6 +49,8 @@ export const sendMessageToGemini = async (
 
   try {
     // 1. Handle Image Generation Request
+    // Note: We typically don't send full chat history for image generation commands 
+    // as they are usually standalone requests.
     if (!imageBase64 && isImageGenerationRequest(prompt)) {
       try {
         const response = await ai.models.generateContent({
@@ -76,13 +80,40 @@ export const sendMessageToGemini = async (
       }
     }
 
-    // 2. Handle Text Chat
+    // 2. Handle Text Chat with History
     
-    const parts: any[] = [];
+    // Construct the contents array from history
+    const contents: any[] = history.map(msg => {
+        const parts: any[] = [];
+        
+        // Add image if present and provided by user (not generated)
+        if (msg.image && !msg.isGeneratedImage) {
+            const cleanBase64 = msg.image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
+            parts.push({
+                inlineData: {
+                    data: cleanBase64,
+                    mimeType: 'image/jpeg', // Assuming jpeg/png for simplicity
+                }
+            });
+        }
+        
+        // Add text
+        if (msg.text) {
+            parts.push({ text: msg.text });
+        }
+
+        return {
+            role: msg.role === MessageRole.USER ? 'user' : 'model',
+            parts: parts
+        };
+    }).filter(content => content.parts.length > 0); // Ensure no empty messages
+
+    // Add the current message
+    const currentParts: any[] = [];
     
     if (imageBase64) {
       const cleanBase64 = imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
-      parts.push({
+      currentParts.push({
         inlineData: {
           data: cleanBase64,
           mimeType: 'image/jpeg',
@@ -90,13 +121,16 @@ export const sendMessageToGemini = async (
       });
     }
     
-    parts.push({ text: prompt });
+    currentParts.push({ text: prompt });
+
+    contents.push({
+        role: 'user',
+        parts: currentParts
+    });
 
     const response = await ai.models.generateContent({
       model: model,
-      contents: {
-        parts: parts,
-      },
+      contents: contents,
     });
 
     return { text: response.text || "عذراً، لم أستطع معالجة الطلب." };
